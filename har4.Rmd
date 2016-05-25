@@ -1,0 +1,80 @@
+---
+title: "Human Activity Recognition"
+---
+
+Load packages and data.
+```{r, warning = FALSE, message = FALSE}
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(randomForest)
+```
+
+```{r, cache = TRUE}
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "harTrain.csv", method = "curl")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "harTest.csv", method = "curl")
+train <- read.csv("harTrain.csv")
+test <- read.csv("harTest.csv")
+dim(train)
+dim(test)
+```
+
+The testing data has many variables with all NA values, so let us first eliminate these variables from both the `train` and `test` data (we also get rid of the first 7 variables which are not useful for determining the `classe`).
+```{r, cache = TRUE}
+fnums <- NULL
+for(i in 1:160){
+  if(sum(!is.na(test[,i])) > 0){
+    fnums <- c(fnums, i)
+  }
+}
+fnums <- fnums[8:length(fnums)]
+train <- train[, fnums]
+test <- test[, fnums]
+names(train)
+```
+
+We have reduced the number of predictors to 52, however, we still have 19622 observations in the `train` set.  To save on computation time, we replace the vector components of vector valued variables with the magnitude of the vector.  We also note that variables that begin with `total_` are just the total magnitude of the vector divided by 10 and rounded to the nearest whole number; we do not need these variables.
+```{r, cahce = TRUE}
+train <- mutate(train, gyros_belt = sqrt(gyros_belt_x^2 + gyros_belt_y^2 + gyros_belt_z^2), accel_belt = sqrt(accel_belt_x^2 + accel_belt_y^2 + accel_belt_z^2), magnet_belt = sqrt(magnet_belt_x^2 + magnet_belt_y^2 + magnet_belt_z^2), gyros_arm = sqrt(gyros_arm_x^2 + gyros_arm_y^2 + gyros_arm_z^2), accel_arm = sqrt(accel_arm_x^2 + accel_arm_y^2 + accel_arm_z^2), magnet_arm = sqrt(magnet_arm_x^2 + magnet_arm_y^2 + magnet_arm_z^2), gyros_dumbbell = sqrt(gyros_dumbbell_x^2 + gyros_dumbbell_y^2 + gyros_dumbbell_z^2), accel_dumbbell = sqrt(accel_dumbbell_x^2 + accel_dumbbell_y^2 + accel_dumbbell_z^2), magnet_dumbbell = sqrt(magnet_dumbbell_x^2 + magnet_dumbbell_y^2 + magnet_dumbbell_z^2), gyros_forearm = sqrt(gyros_forearm_x^2 + gyros_forearm_y^2 + gyros_forearm_z^2), accel_forearm = sqrt(accel_forearm_x^2 + accel_forearm_y^2 + accel_forearm_z^2), magnet_forearm = sqrt(magnet_forearm_x^2 + magnet_forearm_y^2 + magnet_forearm_z^2))
+
+test <- mutate(test, gyros_belt = sqrt(gyros_belt_x^2 + gyros_belt_y^2 + gyros_belt_z^2), accel_belt = sqrt(accel_belt_x^2 + accel_belt_y^2 + accel_belt_z^2), magnet_belt = sqrt(magnet_belt_x^2 + magnet_belt_y^2 + magnet_belt_z^2), gyros_arm = sqrt(gyros_arm_x^2 + gyros_arm_y^2 + gyros_arm_z^2), accel_arm = sqrt(accel_arm_x^2 + accel_arm_y^2 + accel_arm_z^2), magnet_arm = sqrt(magnet_arm_x^2 + magnet_arm_y^2 + magnet_arm_z^2), gyros_dumbbell = sqrt(gyros_dumbbell_x^2 + gyros_dumbbell_y^2 + gyros_dumbbell_z^2), accel_dumbbell = sqrt(accel_dumbbell_x^2 + accel_dumbbell_y^2 + accel_dumbbell_z^2), magnet_dumbbell = sqrt(magnet_dumbbell_x^2 + magnet_dumbbell_y^2 + magnet_dumbbell_z^2), gyros_forearm = sqrt(gyros_forearm_x^2 + gyros_forearm_y^2 + gyros_forearm_z^2), accel_forearm = sqrt(accel_forearm_x^2 + accel_forearm_y^2 + accel_forearm_z^2), magnet_forearm = sqrt(magnet_forearm_x^2 + magnet_forearm_y^2 + magnet_forearm_z^2))
+
+
+fnums <- c(53, 1:3, 54:56, 14:16, 57:59, 27:29, 60:62, 40:42, 63:65)
+train <- train[, fnums]
+test <- test[, fnums]
+names(train)
+```
+
+Now we are ready to build our prediction model.  We use the default random forest in the `randomForest` package.  Run times are still a bit long, so we use 5-fold cross-validation to approximate the test accuracy.
+```{r, cache = TRUE}
+k = 5
+folds <- createFolds(train$classe, k  = k)
+acc <- NULL
+for(i in 1:k){
+  tester <- as.integer(folds[[i]])
+  trainer <- NULL
+  for(j in 1:k){
+    if(j == i){
+      trainer <- c(trainer, NULL)
+    }
+    else{
+      trainer <- c(trainer, as.integer(folds[[j]]))
+    }
+  }
+  training <- train[trainer,]
+  testing <- train[tester,]
+  fit <- train(classe ~., data = training, method = "rf")
+  pred <- predict(fit, newdata = testing)
+  acc <- c(acc,(confusionMatrix(pred, testing$classe)$overall)[[1]])
+}
+acc
+```
+
+On all five permutations the accuracy is about 99%, thus we expect to have an error rate of about 1%.  We can now train our model using all of the `train` data and make predictions regarding the `test` data.
+```{r, cache = TRUE}
+fit <- train(classe ~., data = train, method = "rf")
+pred <- predict(fit, newdata = test)
+```
+
+We can use these predictions in the final quiz by typing `data.frame(pred)` to see our results. We get 20/20 on the final quiz with this model, which agrees with our estimated 1% error. 
